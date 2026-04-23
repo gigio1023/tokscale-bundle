@@ -1,6 +1,7 @@
 # tokscale-bundle
 
 `tokscale-bundle` moves existing `tokscale`-discoverable local data from one machine to another.
+It is written in Rust so it can reuse `tokscale-core` discovery and replay semantics directly.
 
 It does three things:
 
