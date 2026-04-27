@@ -20,6 +20,8 @@ same fake_home
 
 The merge point is the fake home, before `tokscale submit` runs.
 
+![Combined fake-home flow](docs/diagrams/combined-fake-home-flow.drawio.png)
+
 ## What This Tool Does
 
 - `export` copies Tokscale-discoverable local data from the current machine into a zip bundle.
