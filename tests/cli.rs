@@ -161,6 +161,74 @@ fn unpack_materializes_settings_and_prints_manual_submit_steps() {
 }
 
 #[test]
+fn add_local_adds_current_home_files_to_existing_fake_home() {
+    let replay = ReplayConfig {
+        extra_scan_roots: std::collections::BTreeMap::from([(
+            "codex".to_string(),
+            vec![PathBuf::from(".tokscale-bundle/extra/codex")],
+        )]),
+        opencode_db_paths: Vec::new(),
+    };
+
+    let (_archive_dir, archive_path) = bundle_fixture(
+        replay,
+        &[(
+            "home/.tokscale-bundle/extra/codex/source/.codex/sessions/imported.jsonl",
+            b"{}\n",
+        )],
+    );
+
+    let output = command_output(&["unpack", archive_path.to_str().unwrap()]);
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let unpack_root = parse_output_path(&stdout, "unpack_root=");
+    let fake_home = parse_output_path(&stdout, "fake_home=");
+
+    let local_home = tempfile::tempdir().unwrap();
+    write_file(
+        &local_home.path().join(".codex/sessions/local.jsonl"),
+        b"{}\n",
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_tokscale-bundle"))
+        .args(["add-local", unpack_root.to_str().unwrap()])
+        .env("HOME", local_home.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("added local entries"));
+    assert!(stdout.contains("HOME=\""));
+    assert!(stdout.contains("tokscale submit --no-spinner"));
+
+    let settings = load_scanner_settings(&fake_home);
+    let codex_roots = settings.extra_scan_paths.get("codex").unwrap();
+    assert_eq!(codex_roots.len(), 2);
+    assert!(
+        codex_roots
+            .iter()
+            .any(|path| path.ends_with(".tokscale-bundle/extra/codex"))
+    );
+    assert!(
+        codex_roots
+            .iter()
+            .any(|path| path.to_string_lossy().contains(".tokscale-bundle/local/"))
+    );
+
+    let scan_result = scan_all_clients_with_scanner_settings(
+        fake_home.to_str().unwrap(),
+        &["codex".to_string()],
+        false,
+        &settings,
+    );
+    assert_eq!(scan_result.get(tokscale_core::ClientId::Codex).len(), 2);
+
+    fs::remove_dir_all(unpack_root).unwrap();
+}
+
+#[test]
 fn cleanup_removes_valid_unpack_root_and_rejects_invalid_paths() {
     let valid_dir = Builder::new().prefix("tokscale-bundle-").tempdir().unwrap();
     write_file(&valid_dir.path().join("manifest.json"), b"{}");

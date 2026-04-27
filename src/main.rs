@@ -19,6 +19,9 @@ enum Commands {
     Unpack {
         archive: PathBuf,
     },
+    AddLocal {
+        unpack_root: PathBuf,
+    },
     Cleanup {
         unpack_root: PathBuf,
     },
@@ -32,6 +35,12 @@ fn main() -> Result<()> {
         Commands::Unpack { archive } => {
             let bundle = tokscale_bundle::replay::unpack_bundle_archive(&archive)?;
             tokscale_bundle::replay::print_unpack_summary(&bundle);
+            Ok(())
+        }
+        Commands::AddLocal { unpack_root } => {
+            let result =
+                tokscale_bundle::tokscale::add_current_machine_to_unpack_root(&unpack_root)?;
+            tokscale_bundle::tokscale::print_add_local_summary(&result);
             Ok(())
         }
         Commands::Cleanup { unpack_root } => {
