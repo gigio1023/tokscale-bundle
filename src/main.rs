@@ -12,19 +12,17 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Capture this device's Tokscale-discoverable session files into a zip.
     Export {
         #[arg(long, value_name = "ZIP")]
         output: PathBuf,
     },
-    Unpack {
-        archive: PathBuf,
-    },
-    AddLocal {
-        unpack_root: PathBuf,
-    },
-    Cleanup {
-        unpack_root: PathBuf,
-    },
+    /// Materialize an imported archive as a fake home for plain Tokscale.
+    Unpack { archive: PathBuf },
+    /// Append this device's local sessions into an existing unpack root.
+    AddLocal { unpack_root: PathBuf },
+    /// Remove an unpack root created by this tool.
+    Cleanup { unpack_root: PathBuf },
 }
 
 fn main() -> Result<()> {
