@@ -1,80 +1,117 @@
 # tokscale-bundle
 
-`tokscale-bundle` builds a temporary fake home that plain `tokscale` can scan.
+Move Tokscale-discoverable local session data from one device to another, then submit one combined local view with plain `tokscale`.
 
-Use it when `tokscale` server-side submissions do not merge multiple devices correctly and you need to submit one combined local view instead.
+Use this when multiple devices have independent Claude Code, Codex, Gemini, OpenCode, Kilo, Hermes, Crush, or similar local sessions, but you want Tokscale collection and parsing to stay exactly upstream.
 
-The intended flow is:
+## Agent Prompts
+
+Run these in a local coding agent such as Claude Code or Codex.
+
+### Source Device
 
 ```text
-Device A local sessions
-  -> export to zip
-  -> unpack on Device B into fake_home
+I want to export this device's Tokscale-discoverable local session data for transfer to another device.
 
-Device B local sessions
-  -> add-local into the same fake_home
+Use /tmp/tokscale-bundle-device-source.zip as the output archive.
 
-same fake_home
-  -> HOME=<fake_home> tokscale submit
+Steps:
+1. Clone or reuse https://github.com/gigio1023/tokscale-bundle.
+2. Run `git submodule update --init --recursive`.
+3. Run `cargo run -- export --output /tmp/tokscale-bundle-device-source.zip`.
+4. Show me the archive path and the manifest client summary.
+
+Do not copy Tokscale credentials. Do not run `tokscale submit`.
 ```
 
-The merge point is the fake home, before `tokscale submit` runs.
+### Destination Device
+
+```text
+I have a tokscale-bundle archive at <PASTE_ARCHIVE_PATH>.
+
+Use it to prepare one combined Tokscale submission that includes:
+- imported sessions from the archive
+- this device's local Tokscale-discoverable sessions
+
+Steps:
+1. Clone or reuse https://github.com/gigio1023/tokscale-bundle.
+2. Run `git submodule update --init --recursive`.
+3. Run `cargo run -- unpack <PASTE_ARCHIVE_PATH>` and capture `unpack_root` and `fake_home`.
+4. Run `cargo run -- add-local <unpack_root>` from my normal HOME.
+5. Copy my existing `~/.config/tokscale/credentials.json` into `<fake_home>/.config/tokscale/credentials.json`.
+6. Run `HOME="<fake_home>" tokscale submit --dry-run --no-spinner`.
+7. Summarize the clients, totals, and any skipped sources.
+
+Do not run the final non-dry-run submit until I confirm.
+```
+
+## Flow
 
 ![Combined fake-home flow](docs/diagrams/combined-fake-home-flow.drawio.png)
 
-## What This Tool Does
+## Why Not Just Zip and Unzip
 
-- `export` copies Tokscale-discoverable local data from the current machine into a zip bundle.
-- `unpack` creates a temporary fake home from a bundle.
-- `add-local` copies the current machine's local data into an existing fake home.
-- `cleanup` removes the unpacked fake-home directory after submission.
+Plain zip/unzip can work, but the manual workflow is easy to get wrong.
 
-Important constraints:
+`tokscale-bundle` automates the parts that matter:
 
-- `tokscale-bundle` does not submit data by itself.
-- Submission is always done by plain `tokscale submit`.
-- Plain `tokscale` does not scan two home directories at once.
-- To submit combined data, all data must be present in the same fake home before running `tokscale submit`.
+- **Discovery**: reuses `tokscale-core` scanner logic instead of hard-coding paths.
+- **Replay layout**: stages imported data under a fake home that plain `tokscale` can scan.
+- **Settings**: writes fake-home `settings.json` for extra scan roots and replay paths.
+- **Local merge**: adds the destination device's local sessions into the same fake home.
+- **Safety**: keeps credentials out of the archive and avoids overwriting fixed-path data.
 
-## Quick Start
+The key idea: merge before submit, inside the fake home.
 
-This example submits Device A + Device B data as one combined `tokscale submit` payload from Device B.
+## Manual CLI
 
-### 1. Create a bundle on Device A
+Run this section step by step. Blocks labeled as example output are not commands.
+
+### Source Device
+
+Set up and export:
 
 ```bash
 git clone https://github.com/gigio1023/tokscale-bundle.git
 cd tokscale-bundle
 git submodule update --init --recursive
 
-cargo run -- export --output /tmp/tokscale-bundle-device-a.zip
+cargo run -- export --output /tmp/tokscale-bundle-device-source.zip
 ```
 
-Expected output:
+Example output, do not type:
 
 ```text
-Wrote bundle with 12 entries to /tmp/tokscale-bundle-device-a.zip
+Wrote bundle with 12 entries to /tmp/tokscale-bundle-device-source.zip
 ```
 
-The entry count depends on what `tokscale` can discover on Device A.
+Inspect the archive:
 
-### 2. Move the zip file to Device B
+```bash
+unzip -p /tmp/tokscale-bundle-device-source.zip manifest.json \
+  | jq '.entries[] | .client' | sort | uniq -c
+```
 
-Transfer `/tmp/tokscale-bundle-device-a.zip` to Device B by whatever method works in your environment.
+Move `/tmp/tokscale-bundle-device-source.zip` to the destination device.
 
-The transfer method is intentionally not prescribed. Use your normal file transfer workflow.
+### Destination Device
 
-### 3. Unpack the bundle on Device B
+Set up:
 
 ```bash
 git clone https://github.com/gigio1023/tokscale-bundle.git
 cd tokscale-bundle
 git submodule update --init --recursive
-
-cargo run -- unpack /tmp/tokscale-bundle-device-a.zip | tee /tmp/tokscale-bundle-unpack.txt
 ```
 
-Example output:
+Unpack the archive:
+
+```bash
+cargo run -- unpack /path/to/tokscale-bundle-device-source.zip \
+  | tee /tmp/tokscale-bundle-unpack.txt
+```
+
+Example output, do not type:
 
 ```text
 unpack_root=/tmp/tokscale-bundle-abc123
@@ -86,17 +123,20 @@ cp ~/.config/tokscale/credentials.json "/tmp/tokscale-bundle-abc123/home/.config
 HOME="/tmp/tokscale-bundle-abc123/home" tokscale submit --no-spinner
 ```
 
-Do not submit yet if you also need Device B data. The fake home contains Device A data only at this point.
-
-### 4. Add Device B local data to the same fake home
-
-Run `add-local` from the normal Device B shell, not with `HOME` pointed at the fake home.
+Capture the generated paths:
 
 ```bash
-cargo run -- add-local /tmp/tokscale-bundle-abc123
+UNPACK_ROOT="$(awk -F= '/^unpack_root=/{print $2}' /tmp/tokscale-bundle-unpack.txt)"
+FAKE_HOME="$(awk -F= '/^fake_home=/{print $2}' /tmp/tokscale-bundle-unpack.txt)"
 ```
 
-Example output:
+Add this device's local sessions:
+
+```bash
+cargo run -- add-local "$UNPACK_ROOT"
+```
+
+Example output, do not type:
 
 ```text
 unpack_root=/tmp/tokscale-bundle-abc123
@@ -108,211 +148,25 @@ HOME="/tmp/tokscale-bundle-abc123/home" tokscale submit --dry-run --no-spinner
 HOME="/tmp/tokscale-bundle-abc123/home" tokscale submit --no-spinner
 ```
 
-At this point, the fake home contains:
-
-- Device A data from the unpacked bundle
-- Device B data added from the current machine
-- scanner settings that point plain `tokscale` at both replay locations
-
-### 5. Copy Tokscale credentials into the fake home
-
-Device B must already have Tokscale credentials for the account you want to submit to.
-
-Run the `mkdir` and `cp` commands printed by `unpack`.
-
-Using the example output above:
+Copy credentials and preview the combined submit:
 
 ```bash
-mkdir -p "/tmp/tokscale-bundle-abc123/home/.config/tokscale"
-cp ~/.config/tokscale/credentials.json "/tmp/tokscale-bundle-abc123/home/.config/tokscale/credentials.json"
+mkdir -p "$FAKE_HOME/.config/tokscale"
+cp ~/.config/tokscale/credentials.json "$FAKE_HOME/.config/tokscale/credentials.json"
+
+HOME="$FAKE_HOME" tokscale submit --dry-run --no-spinner
 ```
 
-Use the actual paths printed on your machine, not the example `tokscale-bundle-abc123` path.
-
-If you copy credentials from a different account, the combined data will be submitted to that different account.
-
-### 6. Check the combined data before submitting
+Submit only after the dry run looks correct:
 
 ```bash
-HOME="/tmp/tokscale-bundle-abc123/home" tokscale submit --dry-run --no-spinner
+HOME="$FAKE_HOME" tokscale submit --no-spinner
 ```
 
-Check that:
-
-- the expected clients or sources from both devices are present
-- the token and cost totals are plausible for Device A + Device B
-- there is no credentials or authentication error
-
-### 7. Submit once from the combined fake home
+Clean up after submission:
 
 ```bash
-HOME="/tmp/tokscale-bundle-abc123/home" tokscale submit --no-spinner
-```
-
-This is the only submit needed for the combined Device A + Device B view.
-
-Do not also run a separate normal `tokscale submit` for Device B if your goal is to avoid server-side multi-device overwrite behavior.
-
-### 8. Clean up the unpacked replay directory
-
-After submission, remove the unpacked directory:
-
-```bash
-cargo run -- cleanup /tmp/tokscale-bundle-abc123
-```
-
-Pass `unpack_root`, not `fake_home`.
-
-From the example above:
-
-- correct: `/tmp/tokscale-bundle-abc123`
-- incorrect: `/tmp/tokscale-bundle-abc123/home`
-
-## How Combined Submission Works
-
-`tokscale` reads one `HOME` at a time.
-
-`tokscale-bundle` makes a new fake home and places replay data inside it:
-
-```text
-/tmp/tokscale-bundle-abc123/
-  manifest.json
-  home/
-    .config/tokscale/settings.json
-    .tokscale-bundle/
-      extra/...        # imported bundle data
-      local/...        # add-local data
-```
-
-`settings.json` tells plain `tokscale` which replay paths to scan.
-
-When you run:
-
-```bash
-HOME="/tmp/tokscale-bundle-abc123/home" tokscale submit --no-spinner
-```
-
-plain `tokscale` scans the fake home and produces one submit payload from that combined local view.
-
-## What Gets Bundled or Added
-
-`export` and `add-local` use `tokscale-core` discovery logic.
-
-Included when discovered:
-
-- local session files that plain `tokscale` can scan
-- files discovered through scanner settings
-- supported extra-root client files
-- OpenCode DB replay paths
-- Kilo CLI DB when the fake-home fixed path is still empty
-- Hermes DB when the fake-home fixed path is still empty
-- Crush DB plus replay registry
-- Synthetic or Octofriend DB when the fake-home fixed path is still empty
-
-Not included:
-
-- Tokscale credentials
-- remote provider refreshes
-- Windows-specific paths
-
-Fixed-path caveat:
-
-- Some sources are discovered by plain `tokscale` only at fixed paths inside `HOME`.
-- If the imported bundle already occupies that fixed path, `add-local` skips the local fixed-path source instead of overwriting imported data.
-- The command prints `skipped ...` lines for those cases.
-
-## Verification Commands
-
-Inspect clients included in a bundle:
-
-```bash
-unzip -p /tmp/tokscale-bundle-device-a.zip manifest.json | jq '.entries[] | .client' | sort | uniq -c
-```
-
-Inspect generated fake-home scanner settings:
-
-```bash
-jq . /tmp/tokscale-bundle-abc123/home/.config/tokscale/settings.json
-```
-
-Verify what plain `tokscale` would submit from the fake home:
-
-```bash
-HOME="/tmp/tokscale-bundle-abc123/home" tokscale submit --dry-run --no-spinner
-```
-
-## Troubleshooting
-
-### `credentials.json` does not exist
-
-Authenticate plain `tokscale` on Device B first.
-
-One way to force the normal Tokscale auth path is:
-
-```bash
-tokscale submit --dry-run --no-spinner
-```
-
-Then check:
-
-```bash
-ls -l ~/.config/tokscale/credentials.json
-```
-
-### `add-local` reports skipped sources
-
-This means the fake home already has a fixed-path source from the imported bundle, and adding the local one would overwrite it.
-
-The rest of the local replay data is still added. Review the skipped source before relying on totals for that client.
-
-### `HOME="<fake_home>" tokscale submit` does not read Device B's real home
-
-That is expected.
-
-It should not read Device B's real home. Device B data must be added first with:
-
-```bash
-cargo run -- add-local <unpack_root>
-```
-
-After that, `HOME="<fake_home>" tokscale submit` reads Device B data from the fake-home replay paths.
-
-### Profile or leaderboard totals go down after submitting
-
-Possible causes:
-
-- you submitted imported data and Device B local data separately instead of submitting once from the combined fake home
-- credentials from the wrong Tokscale account were copied into the fake home
-- a fixed-path source was skipped during `add-local`
-- upstream `tokscale` server-side aggregation is still affecting existing submitted history
-
-What to do:
-
-- run `HOME="<fake_home>" tokscale submit --dry-run --no-spinner` before submitting
-- submit once from the combined fake home
-- verify the copied credentials belong to the intended account
-- review any `skipped ...` lines from `add-local`
-
-### `cleanup` fails
-
-`cleanup` only removes directories that look like valid unpack roots.
-
-Required shape:
-
-- directory name starts with `tokscale-bundle-`
-- `manifest.json` exists
-- `home/` exists
-
-Wrong:
-
-```bash
-cargo run -- cleanup /tmp/tokscale-bundle-abc123/home
-```
-
-Correct:
-
-```bash
-cargo run -- cleanup /tmp/tokscale-bundle-abc123
+cargo run -- cleanup "$UNPACK_ROOT"
 ```
 
 ## Commands
@@ -332,15 +186,11 @@ cargo run -- cleanup <unpack_root>
 - plain `tokscale` installed separately
 - optional: `jq`, `unzip`
 
-```bash
-git submodule update --init --recursive
-```
+## Safety and Limits
 
-## Limitations
-
-- no Windows support in v1
-- exports disk-backed local data only
-- does not run remote provider refreshes
-- does not include credentials
-- does not merge fixed-path SQLite databases when both imported and local data use the same fixed path
-- submit is manual and always done through plain `tokscale`
+- `tokscale-bundle` does not submit by itself.
+- The final submit is always `HOME="<fake_home>" tokscale submit`.
+- Credentials are never bundled. Copy credentials only on the destination device.
+- For more than two devices, run `add-local` against the same `unpack_root` from each additional device. Importing multiple bundle archives into one existing `unpack_root` is not a CLI command yet.
+- Some clients use fixed paths inside `HOME`. If imported data already occupies that path, `add-local` skips the local fixed-path source instead of overwriting it.
+- Windows is not supported in v1.
