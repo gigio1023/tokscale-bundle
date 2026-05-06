@@ -1,13 +1,6 @@
 use crate::manifest::ReplayConfig;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokscale_core::scanner::ScannerSettings;
-
-pub fn extra_client_replay_root(bundle_home: &Path, client: &str) -> PathBuf {
-    bundle_home
-        .join(".tokscale-bundle")
-        .join("extra")
-        .join(client)
-}
 
 pub fn build_import_scanner_settings(bundle_home: &Path, replay: &ReplayConfig) -> ScannerSettings {
     ScannerSettings {

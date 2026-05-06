@@ -31,10 +31,12 @@ fn parse_local_clients() -> Vec<String> {
 }
 
 fn supports_extra_root_replay(client: ClientId) -> bool {
+    // These clients are discovered through fixed paths or a registry, not extra scan roots.
     !matches!(client, ClientId::Kilo | ClientId::Crush | ClientId::Hermes)
 }
 
 fn path_without_root_slash(path: &Path) -> PathBuf {
+    // Preserve the source path shape inside the bundle without creating absolute zip entries.
     path.strip_prefix("/").unwrap_or(path).to_path_buf()
 }
 
@@ -120,6 +122,7 @@ fn stage_supported_client_files_under(
     let client_name = client.as_str().to_string();
     let destination_root = bundle_home.join(&relative_root);
 
+    // Supported clients replay through Tokscale's scanner.extraScanPaths setting.
     push_unique_path(
         replay
             .extra_scan_roots
@@ -192,6 +195,7 @@ fn stage_special_file_if_missing(
 ) -> Result<()> {
     let destination = bundle_home.join(relative_destination);
     if destination.exists() {
+        // Fixed-path sources share one destination, so never overwrite imported data.
         skipped_sources.push(format!(
             "{client}: {} already exists in fake home",
             relative_destination.display()
@@ -243,6 +247,7 @@ fn stage_crush_registry_with_mode(
         return Ok(());
     }
 
+    // Crush discovers DBs through projects.json, so replay needs a registry pointing at staged DBs.
     let registry_path = bundle_home.join(".local/share/crush/projects.json");
     let mut projects = if append_existing {
         existing_crush_projects(&registry_path)
@@ -315,6 +320,7 @@ fn resolve_unpack_root(unpack_root: &Path) -> Result<PathBuf> {
     if !name.starts_with("tokscale-bundle-") {
         bail!("add-local only accepts unpack roots created by `tokscale-bundle unpack`");
     }
+    // add-local mutates the unpack root, so require the same markers as cleanup.
     if !canonical.join("manifest.json").is_file() || !canonical.join("home").is_dir() {
         bail!("add-local requires a bundle root containing manifest.json and home/");
     }
@@ -322,6 +328,7 @@ fn resolve_unpack_root(unpack_root: &Path) -> Result<PathBuf> {
 }
 
 fn replay_namespace() -> PathBuf {
+    // Namespace local additions so multiple devices can append without path collisions.
     let host = hostname::get()
         .ok()
         .and_then(|value| value.into_string().ok())

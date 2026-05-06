@@ -23,6 +23,7 @@ pub fn unpack_bundle_archive(archive_path: &Path) -> Result<UnpackedBundle> {
     let temp_dir = tempfile::Builder::new()
         .prefix("tokscale-bundle-")
         .tempdir()?;
+    // Keep the fake home alive after this process exits so the user can run Tokscale manually.
     let unpack_root = temp_dir.keep();
 
     unpack_bundle_zip(archive_path, &unpack_root)?;
@@ -75,6 +76,7 @@ fn validate_unpack_root(unpack_root: &Path) -> Result<PathBuf> {
     if !name.starts_with("tokscale-bundle-") {
         bail!("cleanup only accepts unpack roots created by `tokscale-bundle unpack`");
     }
+    // Cleanup is recursive, so require the marker files that unpack always creates.
     if !canonical.join("manifest.json").is_file() || !canonical.join("home").is_dir() {
         bail!("cleanup requires a bundle root containing manifest.json and home/");
     }
