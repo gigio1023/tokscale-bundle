@@ -1,6 +1,7 @@
 use crate::archive::write_bundle_zip;
 use crate::layout::build_import_scanner_settings;
 use crate::manifest::{BundleEntry, BundleManifest, ReplayConfig};
+use crate::replay::fake_home_submit_command;
 use crate::settings::{load_scanner_settings, write_scanner_settings};
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
@@ -467,17 +468,16 @@ pub fn print_add_local_summary(result: &AddLocalResult) {
     }
     println!("combined submit: imported + local replay");
     println!(
-        "HOME=\"{}\" tokscale submit --dry-run --no-spinner",
-        result.fake_home.display()
+        "{}",
+        fake_home_submit_command(&result.fake_home, &["--dry-run", "--no-spinner"])
     );
     println!(
-        "HOME=\"{}\" tokscale submit --no-spinner",
-        result.fake_home.display()
+        "{}",
+        fake_home_submit_command(&result.fake_home, &["--no-spinner"])
     );
 }
 
-pub fn export_current_machine(_output_path: &Path) -> Result<()> {
-    let output_path = _output_path;
+pub fn create_current_machine_bundle(output_path: &Path) -> Result<BundleManifest> {
     let home_dir =
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
     let scanner_settings = load_scanner_settings(&home_dir);
@@ -574,7 +574,11 @@ pub fn export_current_machine(_output_path: &Path) -> Result<()> {
     };
     write_manifest(bundle_root, &manifest)?;
     write_bundle_zip(bundle_root, output_path)?;
+    Ok(manifest)
+}
 
+pub fn export_current_machine(output_path: &Path) -> Result<()> {
+    let manifest = create_current_machine_bundle(output_path)?;
     println!(
         "Wrote bundle with {} entries to {}",
         manifest.entries.len(),

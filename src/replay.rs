@@ -12,6 +12,22 @@ pub struct UnpackedBundle {
     pub settings_path: PathBuf,
 }
 
+pub fn fake_home_submit_command(fake_home: &Path, args: &[&str]) -> String {
+    let mut command = format!(
+        "HOME=\"{}\" XDG_CONFIG_HOME=\"{}\" XDG_DATA_HOME=\"{}\" CODEX_HOME=\"{}\" HERMES_HOME=\"{}\" bunx tokscale@latest submit",
+        fake_home.display(),
+        fake_home.join(".config").display(),
+        fake_home.join(".local/share").display(),
+        fake_home.join(".codex").display(),
+        fake_home.join(".hermes").display(),
+    );
+    for arg in args {
+        command.push(' ');
+        command.push_str(arg);
+    }
+    command
+}
+
 fn load_bundle_manifest(unpack_root: &Path) -> Result<BundleManifest> {
     let manifest_path = unpack_root.join("manifest.json");
     let raw = fs::read_to_string(&manifest_path)
@@ -62,8 +78,8 @@ pub fn print_unpack_summary(bundle: &UnpackedBundle) {
         credentials_path.display()
     );
     println!(
-        "HOME=\"{}\" tokscale submit --no-spinner",
-        bundle.fake_home.display()
+        "{}",
+        fake_home_submit_command(&bundle.fake_home, &["--no-spinner"])
     );
 }
 
