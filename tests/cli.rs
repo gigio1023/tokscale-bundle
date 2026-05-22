@@ -4,7 +4,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use tempfile::Builder;
-use tokscale_bundle::settings::{default_settings_path, load_scanner_settings};
+use tokscale_bundle::hub::merge_submit_payloads;
+use tokscale_bundle::manifest::BundleManifest;
+use tokscale_bundle::settings::{
+    default_settings_path, load_scanner_settings, macos_settings_path,
+};
 use tokscale_core::ClientId;
 use tokscale_core::scanner::scan_all_clients_with_scanner_settings;
 use zip::ZipArchive;
@@ -94,6 +98,111 @@ fn assert_success(output: &Output) {
     );
 }
 
+fn submit_payload(contributions: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "meta": {
+            "generatedAt": "2026-05-22T00:00:00Z",
+            "version": "2.1.3",
+            "dateRange": {
+                "start": "2026-05-21",
+                "end": "2026-05-22"
+            }
+        },
+        "summary": {
+            "totalTokens": 0,
+            "totalCost": 0.0,
+            "totalDays": 0,
+            "activeDays": 0,
+            "averagePerDay": 0.0,
+            "maxCostInSingleDay": 0.0,
+            "clients": [],
+            "models": []
+        },
+        "years": [],
+        "contributions": contributions
+    })
+}
+
+#[test]
+fn payload_proxy_merge_sums_same_day_client_model_from_multiple_devices() {
+    let device_a = submit_payload(serde_json::json!([
+        {
+            "date": "2026-05-22",
+            "totals": { "tokens": 15, "cost": 0.15, "messages": 1 },
+            "intensity": 4,
+            "tokenBreakdown": {
+                "input": 10,
+                "output": 5,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "reasoning": 0
+            },
+            "clients": [
+                {
+                    "client": "codex",
+                    "modelId": "gpt-5",
+                    "providerId": "openai",
+                    "tokens": {
+                        "input": 10,
+                        "output": 5,
+                        "cacheRead": 0,
+                        "cacheWrite": 0,
+                        "reasoning": 0
+                    },
+                    "cost": 0.15,
+                    "messages": 1
+                }
+            ]
+        }
+    ]));
+    let device_b = submit_payload(serde_json::json!([
+        {
+            "date": "2026-05-22",
+            "totals": { "tokens": 30, "cost": 0.30, "messages": 2 },
+            "intensity": 4,
+            "tokenBreakdown": {
+                "input": 20,
+                "output": 10,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "reasoning": 0
+            },
+            "clients": [
+                {
+                    "client": "codex",
+                    "modelId": "gpt-5",
+                    "providerId": "openai",
+                    "tokens": {
+                        "input": 20,
+                        "output": 10,
+                        "cacheRead": 0,
+                        "cacheWrite": 0,
+                        "reasoning": 0
+                    },
+                    "cost": 0.30,
+                    "messages": 2
+                }
+            ]
+        }
+    ]));
+
+    let merged = merge_submit_payloads(&[device_a, device_b]).unwrap();
+    assert_eq!(merged["summary"]["totalTokens"], 45);
+    assert_eq!(merged["summary"]["activeDays"], 1);
+    assert_eq!(merged["summary"]["clients"], serde_json::json!(["codex"]));
+    assert_eq!(merged["summary"]["models"], serde_json::json!(["gpt-5"]));
+    assert_eq!(merged["contributions"].as_array().unwrap().len(), 1);
+
+    let day = &merged["contributions"][0];
+    assert_eq!(day["totals"]["tokens"], 45);
+    assert_eq!(day["totals"]["messages"], 3);
+    assert_eq!(day["clients"].as_array().unwrap().len(), 1);
+    assert_eq!(day["clients"][0]["tokens"]["input"], 30);
+    assert_eq!(day["clients"][0]["tokens"]["output"], 15);
+    assert!((day["clients"][0]["cost"].as_f64().unwrap() - 0.45).abs() < 0.00001);
+    assert_eq!(day["clients"][0]["messages"], 3);
+}
+
 #[test]
 fn cli_flow_builds_a_combined_fake_home_without_credentials() {
     let source_home = tempfile::tempdir().unwrap();
@@ -136,10 +245,12 @@ fn cli_flow_builds_a_combined_fake_home_without_credentials() {
             .any(|entry| entry.ends_with("credentials.json"))
     );
 
-    let manifest: serde_json::Value =
+    let manifest: BundleManifest =
         serde_json::from_slice(&read_zip_entry(&archive_path, "manifest.json")).unwrap();
-    assert_eq!(manifest["formatVersion"], 1);
-    assert!(manifest["entries"].as_array().unwrap().len() >= 6);
+    assert_eq!(manifest.format_version, 1);
+    assert!(manifest.entries.len() >= 6);
+    assert!(manifest.replay.extra_scan_roots.contains_key("codex"));
+    assert!(!manifest.replay.opencode_db_paths.is_empty());
 
     let output = run_bundle(&["unpack", archive_path.to_str().unwrap()], None);
     assert_success(&output);
@@ -149,6 +260,7 @@ fn cli_flow_builds_a_combined_fake_home_without_credentials() {
     let fake_home = parse_output_path(&stdout, "fake_home=");
     assert!(unpack_root.join("manifest.json").is_file());
     assert!(default_settings_path(&fake_home).is_file());
+    assert!(macos_settings_path(&fake_home).is_file());
     assert!(!fake_home.join(".config/tokscale/credentials.json").exists());
 
     let settings = load_scanner_settings(&fake_home);
@@ -174,7 +286,7 @@ fn cli_flow_builds_a_combined_fake_home_without_credentials() {
     assert_success(&output);
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("combined submit: imported + local replay"));
-    assert!(stdout.contains("tokscale submit --dry-run --no-spinner"));
+    assert!(stdout.contains("bunx tokscale@latest submit --dry-run --no-spinner"));
 
     let settings = load_scanner_settings(&fake_home);
     let scan_result = scan_all_clients_with_scanner_settings(

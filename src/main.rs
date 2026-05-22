@@ -17,6 +17,34 @@ enum Commands {
         #[arg(long, value_name = "ZIP")]
         output: PathBuf,
     },
+    /// Upload this device's bundle to a tokscale-bundle server.
+    Upload {
+        #[arg(long, value_name = "URL")]
+        server: String,
+        #[arg(long, env = "TOKSCALE_BUNDLE_TOKEN", value_name = "TOKEN")]
+        token: Option<String>,
+        #[arg(long, value_name = "ID")]
+        device_id: Option<String>,
+        #[arg(long, value_name = "NAME")]
+        device_name: Option<String>,
+    },
+    /// Run a payload proxy and bundle upload server.
+    Serve {
+        #[arg(long, default_value = tokscale_bundle::hub::default_bind(), value_name = "ADDR")]
+        bind: String,
+        #[arg(long, value_name = "DIR")]
+        storage: PathBuf,
+        #[arg(long, env = "TOKSCALE_BUNDLE_TOKEN", value_name = "TOKEN")]
+        token: Option<String>,
+        #[arg(
+            long,
+            default_value = tokscale_bundle::hub::default_upstream_url(),
+            value_name = "URL"
+        )]
+        upstream_url: String,
+        #[arg(long)]
+        submit: bool,
+    },
     /// Materialize an imported archive as a fake home for plain Tokscale.
     Unpack { archive: PathBuf },
     /// Append this device's local sessions into an existing unpack root.
@@ -30,6 +58,30 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Export { output } => tokscale_bundle::tokscale::export_current_machine(&output),
+        Commands::Upload {
+            server,
+            token,
+            device_id,
+            device_name,
+        } => tokscale_bundle::hub::upload_current_machine(tokscale_bundle::hub::UploadOptions {
+            server,
+            token,
+            device_id,
+            device_name,
+        }),
+        Commands::Serve {
+            bind,
+            storage,
+            token,
+            upstream_url,
+            submit,
+        } => tokscale_bundle::hub::serve(tokscale_bundle::hub::ServeOptions {
+            bind,
+            storage,
+            token,
+            upstream_url,
+            submit,
+        }),
         Commands::Unpack { archive } => {
             let bundle = tokscale_bundle::replay::unpack_bundle_archive(&archive)?;
             tokscale_bundle::replay::print_unpack_summary(&bundle);

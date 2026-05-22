@@ -7,6 +7,20 @@ pub fn default_settings_path(home_dir: &Path) -> PathBuf {
     home_dir.join(".config/tokscale/settings.json")
 }
 
+pub fn macos_settings_path(home_dir: &Path) -> PathBuf {
+    home_dir.join("Library/Application Support/tokscale/settings.json")
+}
+
+fn settings_path_candidates(home_dir: &Path) -> Vec<PathBuf> {
+    let default_path = default_settings_path(home_dir);
+    let macos_path = macos_settings_path(home_dir);
+    if default_path == macos_path {
+        vec![default_path]
+    } else {
+        vec![default_path, macos_path]
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 struct AppSettings {
@@ -25,14 +39,19 @@ pub fn load_scanner_settings(home_dir: &Path) -> ScannerSettings {
 }
 
 pub fn write_scanner_settings(home_dir: &Path, scanner: &ScannerSettings) -> Result<PathBuf> {
-    let path = default_settings_path(home_dir);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
     let app_settings = AppSettings {
         scanner: scanner.clone(),
     };
-    std::fs::write(&path, serde_json::to_vec_pretty(&app_settings)?)?;
-    Ok(path)
+    let content = serde_json::to_vec_pretty(&app_settings)?;
+    let mut written_path = None;
+
+    for path in settings_path_candidates(home_dir) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, &content)?;
+        written_path.get_or_insert(path);
+    }
+
+    Ok(written_path.expect("settings_path_candidates is never empty"))
 }
