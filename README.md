@@ -1,118 +1,16 @@
 # tokscale-bundle
 
-`tokscale-bundle` helps submit one Tokscale view from multiple devices.
+Multi-device Tokscale submission hub.
 
-The preferred mode is a payload proxy hub. Each device runs official `tokscale submit`, but points it at your server. The device sends the normal Tokscale submit JSON payload only, not raw Codex sessions or local SQLite files.
+The normal path is **payload proxy mode**: each device runs official `tokscale submit`, but sends the generated submit payload to your server first. The server stores the latest payload per device, merges all devices, then submits one combined payload to Tokscale.
 
-Use it when Tokscale's remote submit path still merges by client instead of by device, and you want one server-owned merge point for all machines.
+Raw session files stay on each device in payload proxy mode.
 
-## Recommended Flow
+![Payload proxy flow](docs/diagrams/payload-proxy-flow.drawio.png)
 
-```text
-Device A
-  TOKSCALE_API_URL=https://hub.example.com/devices/macbook
-  bunx tokscale@latest submit
-  -> sends submit payload JSON to the hub
+## Quick Start
 
-Device B
-  TOKSCALE_API_URL=https://hub.example.com/devices/workstation
-  bunx tokscale@latest submit
-  -> sends submit payload JSON to the hub
-
-Hub
-  -> stores the latest payload per device
-  -> merges date/client/model/provider rows
-  -> submits one merged payload to https://tokscale.ai/api/submit
-```
-
-The older fake-home bundle flow is still available as a fallback when you need to move raw Tokscale-discoverable data between machines and let upstream `tokscale` scan one combined fake home.
-
-## Agent Prompts
-
-Run these in a local coding agent such as Claude Code or Codex.
-
-### Server Payload Proxy
-
-```text
-I want to run tokscale-bundle as my multi-device Tokscale payload proxy.
-
-Steps:
-1. Clone or reuse https://github.com/gigio1023/tokscale-bundle on my server.
-2. Run `cargo run -- serve --bind 0.0.0.0:4787 --storage /var/lib/tokscale-bundle --submit`.
-3. Tell me the `TOKSCALE_API_URL` value each device should use, with a unique `/devices/<device-id>` path.
-4. Do not copy raw local sessions to the server.
-```
-
-### Source Device Payload Submit
-
-```text
-I want this device to submit its Tokscale usage through my payload proxy server.
-
-Use this device id: <DEVICE_ID>.
-Use this server URL: https://<SERVER_HOST>.
-
-Steps:
-1. Set `TOKSCALE_API_URL=https://<SERVER_HOST>/devices/<DEVICE_ID>`.
-2. Run `bunx tokscale@latest submit --no-spinner`.
-3. Show me whether the proxy accepted the payload.
-
-Do not export raw sessions unless the payload proxy fails.
-```
-
-### Bundle Fallback Source Device
-
-```text
-I want to export this device's Tokscale-discoverable local session data for transfer to another device.
-
-Use /tmp/tokscale-bundle-device-source.zip as the output archive.
-
-Steps:
-1. Clone or reuse https://github.com/gigio1023/tokscale-bundle.
-2. Run `git submodule update --init --recursive`.
-3. Run `cargo run -- export --output /tmp/tokscale-bundle-device-source.zip`.
-4. Show me the archive path and the manifest client summary.
-
-Do not copy Tokscale credentials. Do not run `tokscale submit`.
-```
-
-### Bundle Fallback Destination Device
-
-```text
-I have a tokscale-bundle archive at <PASTE_ARCHIVE_PATH>.
-
-Use it to prepare one combined Tokscale submission that includes:
-- imported sessions from the archive
-- this device's local Tokscale-discoverable sessions
-
-Steps:
-1. Clone or reuse https://github.com/gigio1023/tokscale-bundle.
-2. Run `git submodule update --init --recursive`.
-3. Run `cargo run -- unpack <PASTE_ARCHIVE_PATH>` and capture `unpack_root` and `fake_home`.
-4. Run `cargo run -- add-local <unpack_root>` from my normal HOME.
-5. Copy my existing `~/.config/tokscale/credentials.json` into `<fake_home>/.config/tokscale/credentials.json`.
-6. Run the printed `bunx tokscale@latest submit --dry-run --no-spinner` command.
-7. Summarize the clients, totals, and any skipped sources.
-
-Do not run the final non-dry-run submit until I confirm.
-```
-
-## Flow
-
-![Combined fake-home flow](docs/diagrams/combined-fake-home-flow.drawio.png)
-
-## What This Tool Does
-
-- `serve` receives official Tokscale submit payloads at `/api/submit` or `/devices/<device-id>/api/submit`.
-- `serve` stores one latest payload per device and per Tokscale token hash.
-- `serve` merges payloads by date, client, model, and provider.
-- `serve --submit` forwards the merged payload to upstream Tokscale immediately after each incoming device payload.
-- `serve` exposes `/api/hub/status`, `/api/hub/preview`, `/api/hub/push`, and `DELETE /api/hub/device/<device-id>`.
-- `upload` creates a raw-data bundle and uploads it to `/api/bundles` for fallback fake-home submission.
-- `export`, `unpack`, `add-local`, and `cleanup` support the manual fake-home flow.
-
-## Payload Proxy Quick Start
-
-Run this on your server:
+Run the hub on your server:
 
 ```bash
 git clone https://github.com/gigio1023/tokscale-bundle.git
@@ -120,40 +18,37 @@ cd tokscale-bundle
 cargo run -- serve --bind 0.0.0.0:4787 --storage /var/lib/tokscale-bundle --submit
 ```
 
-Run this from each device, using a different device id in the URL path:
-
-```bash
-export TOKSCALE_API_URL="https://your-server.example.com/devices/macbook-pro"
-bunx tokscale@latest submit --no-spinner
-```
-
-Example device URL plan:
+Point each device at the hub with a unique device id:
 
 ```bash
 # MacBook
 export TOKSCALE_API_URL="https://your-server.example.com/devices/macbook-pro"
+bunx tokscale@latest submit --no-spinner
 
 # Desktop
 export TOKSCALE_API_URL="https://your-server.example.com/devices/desktop"
-
-# Work laptop
-export TOKSCALE_API_URL="https://your-server.example.com/devices/work-laptop"
+bunx tokscale@latest submit --no-spinner
 ```
 
-Important: official `tokscale submit` does not send a device id header. If every device uses `https://your-server.example.com` without a `/devices/<device-id>` path, all devices are stored as `default` and overwrite each other.
+That is the main workflow. Every new device submission updates the server's stored payload for that device, rebuilds the merged payload, and, with `--submit`, immediately forwards it to `https://tokscale.ai/api/submit`.
 
-The hub authenticates payload proxy requests with the normal `Authorization: Bearer <tokscale api token>` header sent by official `tokscale submit`.
+## The Important Detail
 
-With `--submit`, the hub forwards the merged payload to `https://tokscale.ai/api/submit` using the same bearer token. Without `--submit`, payloads are stored and merged locally until you push manually:
+Official `tokscale submit` does not send a device id header. The device id comes from the URL path:
 
 ```bash
-curl -X POST -H "Authorization: Bearer $TOKSCALE_API_TOKEN" \
-  https://your-server.example.com/api/hub/push
+TOKSCALE_API_URL="https://your-server.example.com/devices/<device-id>"
 ```
 
-Inspect stored payload state:
+Do not use the same URL on every machine. If all devices submit to `https://your-server.example.com`, they all become the `default` device and overwrite each other.
+
+## Check The Hub
+
+Use the same Tokscale API token that `tokscale submit` uses.
 
 ```bash
+export TOKSCALE_API_TOKEN="tt_..."
+
 curl -H "Authorization: Bearer $TOKSCALE_API_TOKEN" \
   https://your-server.example.com/api/hub/status
 
@@ -161,7 +56,23 @@ curl -H "Authorization: Bearer $TOKSCALE_API_TOKEN" \
   https://your-server.example.com/api/hub/preview
 ```
 
-Payload proxy endpoints:
+If the hub is running without `--submit`, push the current merged payload manually:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKSCALE_API_TOKEN" \
+  https://your-server.example.com/api/hub/push
+```
+
+Remove a stale device:
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $TOKSCALE_API_TOKEN" \
+  https://your-server.example.com/api/hub/device/old-laptop
+```
+
+## Endpoints
+
+Payload proxy:
 
 - `POST /api/submit`
 - `POST /devices/<device-id>/api/submit`
@@ -170,22 +81,23 @@ Payload proxy endpoints:
 - `POST /api/hub/push`
 - `DELETE /api/hub/device/<device-id>`
 
-## Bundle Fallback Server
+Bundle fallback:
 
-Bundle fallback uploads raw Tokscale-discoverable data to the server. Prefer payload proxy mode unless you specifically need fake-home scanning.
+- `GET /health`
+- `POST /api/bundles`
 
-Run this on the authenticated server. The server must already have Tokscale credentials at `~/.config/tokscale/credentials.json`.
+## Bundle Fallback
+
+Use this only when payload proxy mode is not enough and you need the server to run upstream Tokscale scanning against a combined fake home. Unlike payload proxy mode, this uploads raw Tokscale-discoverable local data to your server.
+
+Server:
 
 ```bash
-git clone https://github.com/gigio1023/tokscale-bundle.git
-cd tokscale-bundle
-git submodule update --init --recursive
-
 export TOKSCALE_BUNDLE_TOKEN="$(openssl rand -hex 32)"
 cargo run -- serve --bind 0.0.0.0:4787 --storage /var/lib/tokscale-bundle --submit
 ```
 
-Upload from each device:
+Each device:
 
 ```bash
 export TOKSCALE_BUNDLE_TOKEN="same-token-as-server"
@@ -194,114 +106,37 @@ cargo run -- upload \
   --device-name "MacBook Pro"
 ```
 
-`upload` persists a local device identity at `~/.config/tokscale-bundle/device.json`. The server stores uploads under `storage/devices/<device-id>/`, keeps the latest zip for each device, rebuilds `storage/combined/home`, copies the server's Tokscale credentials into that fake home, and submits if `--submit` is set.
+The server keeps the latest bundle per device under `storage/devices/<device-id>/`, rebuilds `storage/combined/home`, copies the server's Tokscale credentials into that fake home, and runs `bunx tokscale@latest submit` when `--submit` is enabled.
 
-Bundle endpoints:
+## Manual Fake-Home Flow
 
-- `GET /health`
-- `POST /api/bundles` with `Authorization: Bearer <token>` and a zip body
-
-## Manual Fake-Home CLI
-
-Run this section step by step. Blocks labeled as example output are not commands.
-
-### Source Device
-
-Set up and export:
+For one-off transfer without a long-running server:
 
 ```bash
-git clone https://github.com/gigio1023/tokscale-bundle.git
-cd tokscale-bundle
-git submodule update --init --recursive
+# Source device
+cargo run -- export --output /tmp/tokscale-bundle-device-a.zip
 
-cargo run -- export --output /tmp/tokscale-bundle-device-source.zip
-```
-
-Example output, do not type:
-
-```text
-Wrote bundle with 12 entries to /tmp/tokscale-bundle-device-source.zip
-```
-
-Inspect the archive:
-
-```bash
-unzip -p /tmp/tokscale-bundle-device-source.zip manifest.json \
-  | jq '.entries[] | .client' | sort | uniq -c
-```
-
-Move `/tmp/tokscale-bundle-device-source.zip` to the destination device.
-
-### Destination Device
-
-Set up:
-
-```bash
-git clone https://github.com/gigio1023/tokscale-bundle.git
-cd tokscale-bundle
-git submodule update --init --recursive
-```
-
-Unpack the archive:
-
-```bash
-cargo run -- unpack /path/to/tokscale-bundle-device-source.zip \
-  | tee /tmp/tokscale-bundle-unpack.txt
-```
-
-Example output, do not type:
-
-```text
-unpack_root=/tmp/tokscale-bundle-abc123
-fake_home=/tmp/tokscale-bundle-abc123/home
-settings_path=/tmp/tokscale-bundle-abc123/home/.config/tokscale/settings.json
-manual submit: imported-only v1
-mkdir -p "/tmp/tokscale-bundle-abc123/home/.config/tokscale"
-cp ~/.config/tokscale/credentials.json "/tmp/tokscale-bundle-abc123/home/.config/tokscale/credentials.json"
-HOME="/tmp/tokscale-bundle-abc123/home" XDG_CONFIG_HOME="/tmp/tokscale-bundle-abc123/home/.config" XDG_DATA_HOME="/tmp/tokscale-bundle-abc123/home/.local/share" CODEX_HOME="/tmp/tokscale-bundle-abc123/home/.codex" HERMES_HOME="/tmp/tokscale-bundle-abc123/home/.hermes" bunx tokscale@latest submit --no-spinner
-```
-
-Capture the generated paths:
-
-```bash
+# Destination device
+cargo run -- unpack /tmp/tokscale-bundle-device-a.zip | tee /tmp/tokscale-bundle-unpack.txt
 UNPACK_ROOT="$(awk -F= '/^unpack_root=/{print $2}' /tmp/tokscale-bundle-unpack.txt)"
 FAKE_HOME="$(awk -F= '/^fake_home=/{print $2}' /tmp/tokscale-bundle-unpack.txt)"
-```
 
-Add this device's local sessions:
-
-```bash
 cargo run -- add-local "$UNPACK_ROOT"
-```
 
-Example output, do not type:
-
-```text
-unpack_root=/tmp/tokscale-bundle-abc123
-fake_home=/tmp/tokscale-bundle-abc123/home
-settings_path=/tmp/tokscale-bundle-abc123/home/.config/tokscale/settings.json
-added local entries=8
-combined submit: imported + local replay
-HOME="/tmp/tokscale-bundle-abc123/home" XDG_CONFIG_HOME="/tmp/tokscale-bundle-abc123/home/.config" XDG_DATA_HOME="/tmp/tokscale-bundle-abc123/home/.local/share" CODEX_HOME="/tmp/tokscale-bundle-abc123/home/.codex" HERMES_HOME="/tmp/tokscale-bundle-abc123/home/.hermes" bunx tokscale@latest submit --dry-run --no-spinner
-HOME="/tmp/tokscale-bundle-abc123/home" XDG_CONFIG_HOME="/tmp/tokscale-bundle-abc123/home/.config" XDG_DATA_HOME="/tmp/tokscale-bundle-abc123/home/.local/share" CODEX_HOME="/tmp/tokscale-bundle-abc123/home/.codex" HERMES_HOME="/tmp/tokscale-bundle-abc123/home/.hermes" bunx tokscale@latest submit --no-spinner
-```
-
-Copy credentials and preview the combined submit:
-
-```bash
 mkdir -p "$FAKE_HOME/.config/tokscale"
 cp ~/.config/tokscale/credentials.json "$FAKE_HOME/.config/tokscale/credentials.json"
 
-HOME="$FAKE_HOME" XDG_CONFIG_HOME="$FAKE_HOME/.config" XDG_DATA_HOME="$FAKE_HOME/.local/share" CODEX_HOME="$FAKE_HOME/.codex" HERMES_HOME="$FAKE_HOME/.hermes" bunx tokscale@latest submit --dry-run --no-spinner
+HOME="$FAKE_HOME" \
+XDG_CONFIG_HOME="$FAKE_HOME/.config" \
+XDG_DATA_HOME="$FAKE_HOME/.local/share" \
+CODEX_HOME="$FAKE_HOME/.codex" \
+HERMES_HOME="$FAKE_HOME/.hermes" \
+bunx tokscale@latest submit --dry-run --no-spinner
 ```
 
-Submit only after the dry run looks correct:
+If the dry run looks correct, rerun the printed command without `--dry-run`.
 
-```bash
-HOME="$FAKE_HOME" XDG_CONFIG_HOME="$FAKE_HOME/.config" XDG_DATA_HOME="$FAKE_HOME/.local/share" CODEX_HOME="$FAKE_HOME/.codex" HERMES_HOME="$FAKE_HOME/.hermes" bunx tokscale@latest submit --no-spinner
-```
-
-Clean up after submission:
+Clean up:
 
 ```bash
 cargo run -- cleanup "$UNPACK_ROOT"
@@ -310,7 +145,7 @@ cargo run -- cleanup "$UNPACK_ROOT"
 ## Commands
 
 ```bash
-cargo run -- serve --bind 0.0.0.0:4787 --storage /var/lib/tokscale-bundle --submit
+cargo run -- serve --storage /var/lib/tokscale-bundle --submit
 cargo run -- upload --server https://your-server.example.com --device-name "MacBook Pro"
 cargo run -- export --output <bundle.zip>
 cargo run -- unpack <bundle.zip>
@@ -322,15 +157,12 @@ cargo run -- cleanup <unpack_root>
 
 - macOS or Linux
 - Rust toolchain
-- Official `tokscale` runnable through `bunx tokscale@latest`
-- Git submodules initialized for fake-home bundle operations
-- Optional: `jq`, `unzip`
+- Official Tokscale runnable as `bunx tokscale@latest`
+- TLS/reverse proxy if the hub is internet-facing
 
-## Safety and Limits
+## Notes
 
-- Payload proxy mode sends only the official Tokscale submit payload JSON to your server.
 - Payload proxy storage is partitioned by Tokscale bearer-token hash and device id.
-- Put TLS and public auth/rate limits in front of `serve` if it is internet-facing.
-- In bundle fallback mode, credentials are never bundled. Copy credentials only on the submitting server or destination device.
-- Fixed-path clients such as Kilo, Hermes, Synthetic, and Crush can still collide in fake-home bundle mode because upstream `tokscale` discovers them at fixed paths inside one `HOME`.
+- Payload proxy mode sends submit JSON only; it does not upload raw sessions.
+- Bundle fallback mode can collide for fixed-path clients such as Kilo, Hermes, Synthetic, and Crush because upstream Tokscale discovers them at fixed paths inside one fake `HOME`.
 - Windows is not supported in v1.
