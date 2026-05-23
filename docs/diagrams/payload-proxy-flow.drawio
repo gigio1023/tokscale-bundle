@@ -1,0 +1,31 @@
+<mxfile host="app.diagrams.net" modified="2026-05-23T00:00:00.000Z" agent="Codex" version="24.7.17" type="device">
+  <diagram id="payload-proxy-flow" name="Payload proxy flow">
+    <mxGraphModel dx="900" dy="760" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="760" pageHeight="460" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="devices" value="Devices&#xa;tokscale submit" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EAF2F8;strokeColor=#2E86C1;fontColor=#154360;fontSize=18;fontStyle=1;spacing=10;spacingLeft=16;spacingRight=16;spacingTop=10;spacingBottom=10;" vertex="1" parent="1">
+          <mxGeometry x="210" y="35" width="340" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="payload" value="Submit payload&#xa;JSON only" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F8F9F9;strokeColor=#85929E;fontColor=#2C3E50;fontSize=18;fontStyle=1;spacing=10;spacingLeft=16;spacingRight=16;spacingTop=10;spacingBottom=10;" vertex="1" parent="1">
+          <mxGeometry x="210" y="135" width="340" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="hub" value="Your server&#xa;merge by device" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#E8F8F5;strokeColor=#148F77;fontColor=#0E6251;fontSize=18;fontStyle=1;spacing=10;spacingLeft=16;spacingRight=16;spacingTop=10;spacingBottom=10;" vertex="1" parent="1">
+          <mxGeometry x="210" y="235" width="340" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="remote" value="Tokscale&#xa;remote submit" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FDEDEC;strokeColor=#C0392B;fontColor=#641E16;fontSize=18;fontStyle=1;spacing=10;spacingLeft=16;spacingRight=16;spacingTop=10;spacingBottom=10;" vertex="1" parent="1">
+          <mxGeometry x="210" y="335" width="340" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2874A6;strokeWidth=4;endArrow=block;endFill=1;" edge="1" parent="1" source="devices" target="payload">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#148F77;strokeWidth=4;endArrow=block;endFill=1;" edge="1" parent="1" source="payload" target="hub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#148F77;strokeWidth=4;endArrow=block;endFill=1;" edge="1" parent="1" source="hub" target="remote">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
