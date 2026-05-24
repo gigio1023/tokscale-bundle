@@ -73,7 +73,15 @@ Direct and Docker modes are compatible. Use the same storage directory to move b
 
 ## Device Submit
 
-Use a unique, stable device id in the URL path:
+All devices you want to merge must use the same Tokscale credential:
+
+```text
+~/.config/tokscale/credentials.json
+```
+
+That file is written by `tokscale login` and contains the bearer token used by `tokscale submit`. Copy or otherwise keep the same `credentials.json` on every device that should be part of the same combined profile.
+
+Then use a unique, stable device id in the URL path:
 
 ```bash
 export TOKSCALE_API_URL="https://your-server.example.com/devices/macbook-pro"
@@ -98,11 +106,13 @@ Payload proxy state is stored as files:
 <storage>/payloads/<tokscale-token-hash>/devices/<device-id>.json
 ```
 
-Tokscale token and device id both matter:
+The Tokscale token is the merge namespace. Device id only separates machines inside that namespace:
 
 - same Tokscale token + same device id: updates the existing device file
 - same Tokscale token + new device id: adds another device
 - new Tokscale token: creates a separate token-hash namespace
+
+If one device submits through the proxy with a different Tokscale token, it will not merge with the others. With `--submit`, that separate token namespace can be forwarded upstream and replace what you expected to be the combined profile for that token. Keep `~/.config/tokscale/credentials.json` identical across devices before submitting through the proxy.
 
 ## Inspect
 
