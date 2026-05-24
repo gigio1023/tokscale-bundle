@@ -1,0 +1,9 @@
+.git
+target
+vendor/tokscale/target
+vendor/tokscale/node_modules
+vendor/tokscale/packages/frontend/.next
+vendor/tokscale/packages/frontend/node_modules
+vendor/tokscale/packages/benchmarks/node_modules
+*.log
+*.tmp

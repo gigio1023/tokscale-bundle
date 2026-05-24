@@ -469,11 +469,11 @@ pub fn print_add_local_summary(result: &AddLocalResult) {
     println!("combined submit: imported + local replay");
     println!(
         "{}",
-        fake_home_submit_command(&result.fake_home, &["--dry-run", "--no-spinner"])
+        fake_home_submit_command(&result.fake_home, &["--dry-run"])
     );
     println!(
         "{}",
-        fake_home_submit_command(&result.fake_home, &["--no-spinner"])
+        fake_home_submit_command(&result.fake_home, &[])
     );
 }
 
