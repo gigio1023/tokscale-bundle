@@ -79,7 +79,7 @@ pub fn print_unpack_summary(bundle: &UnpackedBundle) {
     );
     println!(
         "{}",
-        fake_home_submit_command(&bundle.fake_home, &["--no-spinner"])
+        fake_home_submit_command(&bundle.fake_home, &[])
     );
 }
 

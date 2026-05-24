@@ -286,7 +286,7 @@ fn cli_flow_builds_a_combined_fake_home_without_credentials() {
     assert_success(&output);
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("combined submit: imported + local replay"));
-    assert!(stdout.contains("bunx tokscale@latest submit --dry-run --no-spinner"));
+    assert!(stdout.contains("bunx tokscale@latest submit --dry-run"));
 
     let settings = load_scanner_settings(&fake_home);
     let scan_result = scan_all_clients_with_scanner_settings(

@@ -434,7 +434,7 @@ fn copy_server_credentials(fake_home: &Path) -> Result<bool> {
 
 fn run_submit(fake_home: &Path) -> Result<()> {
     copy_server_credentials(fake_home)?;
-    let command = fake_home_submit_command(fake_home, &["--no-spinner"]);
+    let command = fake_home_submit_command(fake_home, &[]);
     let status = Command::new("sh")
         .arg("-lc")
         .arg(&command)
